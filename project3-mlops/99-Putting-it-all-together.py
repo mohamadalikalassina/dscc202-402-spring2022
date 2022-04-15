@@ -65,7 +65,23 @@ display(airbnbDF)
 
 # COMMAND ----------
 
-# TODO
+# My Answer
+def make_float(number):
+    number = number.strip('$')
+    try:
+        [num,dec]=number.rsplit('.')
+        dec = int(dec)
+        aside = str(dec)
+        x = int('1'+'0'*len(aside))
+        price = float(dec)/x
+        num = num.replace(',','')
+        num = int(num)
+        price = num + price
+    except:
+        price = int(number)
+    return price
+
+airbnbDF['price'] = airbnbDF['price'].apply(lambda x: make_float(x))
 
 # COMMAND ----------
 
@@ -76,7 +92,8 @@ display(airbnbDF)
 
 # COMMAND ----------
 
-# TODO
+# My Answer
+display(airbnbDF)
 
 # COMMAND ----------
 
