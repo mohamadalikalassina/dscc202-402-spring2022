@@ -103,7 +103,25 @@ display(airbnbDF)
 
 # COMMAND ----------
 
-# TODO
+# I am choosing to keep all columns in the dataset
+
+# Returns dictionary having key as category and values as number
+def find_category_mappings(data, variable):
+    return {k: i for i, k in enumerate(data[variable].unique())}
+
+# Returns the column after mapping with dictionary
+def integer_encode(data,variable, ordinal_mapping):
+    data[variable] = data[variable].map(ordinal_mapping)
+
+data = airbnbDF[['host_is_superhost', 'cancellation_policy', 'instant_bookable','neighbourhood_cleansed', 'zipcode','property_type', 'room_type','bed_type']]
+for variable in ['host_is_superhost', 'cancellation_policy', 'instant_bookable','neighbourhood_cleansed', 'zipcode','property_type', 'room_type','bed_type']:
+    mappings = find_category_mappings(data,variable)
+    integer_encode(data, variable, mappings)
+
+airbnbDF=airbnbDF.drop(columns=['host_is_superhost', 'cancellation_policy', 'instant_bookable','neighbourhood_cleansed', 'zipcode','property_type', 'room_type','bed_type'])
+
+df=pd.concat([airbnbDF, data], axis=1)
+
 
 # COMMAND ----------
 
@@ -114,9 +132,13 @@ display(airbnbDF)
 
 # COMMAND ----------
 
-# TODO
+# My Answer
 from sklearn.model_selection import train_test_split
 
+X = df.drop("price", axis =1)
+y = df["price"]
+ 
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=265)
 
 # COMMAND ----------
 
@@ -135,7 +157,26 @@ from sklearn.model_selection import train_test_split
 
 # COMMAND ----------
 
-# TODO
+# My Answer
+#X_train.isna().sum()
+#X_test.isna().sum()
+#y_train.isna().sum()
+#y_test.isna().sum()
+
+#IMPUTATION
+from sklearn.impute import SimpleImputer
+imp = SimpleImputer(strategy='median')
+imp.fit(X_train)
+X_train=imp.transform(X_train)
+imp.fit(X_test)
+X_test=imp.transform(X_test)
+
+y_train = y_train.fillna(y_train.mode()[0])
+y_test = y_test.fillna(y_test.mode()[0])
+
+from sklearn.ensemble import RandomForestRegressor
+rfr = RandomForestRegressor(max_depth=25)
+rfr.fit(X_train, y_train)
 
 # COMMAND ----------
 
@@ -144,7 +185,13 @@ from sklearn.model_selection import train_test_split
 
 # COMMAND ----------
 
-# TODO
+# My Answer
+from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_absolute_error
+
+rfr_mse = mean_squared_error(y_test, rfr.predict(X_test))
+rfr_msa = mean_absolute_error(y_test, rfr.predict(X_test))
+rfr_mse,rfr_msa
 
 # COMMAND ----------
 
@@ -154,9 +201,15 @@ from sklearn.model_selection import train_test_split
 
 # COMMAND ----------
 
-# TODO
+# My Answer
 import mlflow.sklearn
 
+with mlflow.start_run(run_name="RFR Model") as run: 
+    mlflow.sklearn.log_model(rfr, "random-forest-regression-model")
+    mlflow.log_metric("mse", rfr_mse)
+    mlflow.log_metric("msa", rfr_msa)
+    experimentID = run.info.experiment_id
+    artifactURI = mlflow.get_artifact_uri()
 
 # COMMAND ----------
 
@@ -172,8 +225,16 @@ import mlflow.sklearn
 
 # COMMAND ----------
 
-# TODO
+# My Answer
 import mlflow.pyfunc
+from  mlflow.tracking import MlflowClient
+
+client = MlflowClient()
+rfr_run = sorted(client.list_run_infos(experimentID), key=lambda r: r.start_time, reverse=True)[0]
+rfr_path = rfr_run.artifact_uri+"/random-forest-regression-model/"
+
+#rf2_pyfunc_model = mlflow.pyfunc.load_pyfunc(rf2_path.replace("dbfs:", "/dbfs"))
+rfr_pyfunc_model = mlflow.pyfunc.load_model(rfr_path)
 
 # COMMAND ----------
 
@@ -191,7 +252,7 @@ import mlflow.pyfunc
 
 # COMMAND ----------
 
-# TODO
+# My Answer
 
 class Airbnb_Model(mlflow.pyfunc.PythonModel):
 
@@ -199,8 +260,9 @@ class Airbnb_Model(mlflow.pyfunc.PythonModel):
         self.model = model
     
     def predict(self, context, model_input):
-        # FILL_IN
-
+        results = self.model.predict(model_input)
+        final = results/model_input[:,3]
+        return final
 
 # COMMAND ----------
 
@@ -209,10 +271,13 @@ class Airbnb_Model(mlflow.pyfunc.PythonModel):
 
 # COMMAND ----------
 
-# TODO
-final_model_path =  f"{working_path}/final-model"
+# My Answer
+#I names id final-model-0 because I have having issues with the file being deleted once but still showing as existing
+final_model_path =  f"{working_path}/final-model-0"
 
-# FILL_IN
+dbutils.fs.rm(final_model_path) # remove folder if already exists
+rfr_postprocess_model = Airbnb_Model(rfr_pyfunc_model)
+mlflow.pyfunc.save_model(path=final_model_path.replace("dbfs:", "/dbfs"), python_model=rfr_postprocess_model)
 
 # COMMAND ----------
 
@@ -221,7 +286,14 @@ final_model_path =  f"{working_path}/final-model"
 
 # COMMAND ----------
 
-# TODO
+# My Answer
+
+# Load the model 
+loaded_postprocess_model = mlflow.pyfunc.load_model(final_model_path.replace("dbfs:", "/dbfs"))
+
+# Apply the model
+x = loaded_postprocess_model.predict(X_test)
+x
 
 # COMMAND ----------
 
@@ -239,12 +311,16 @@ final_model_path =  f"{working_path}/final-model"
 
 # COMMAND ----------
 
-# TODO
-save the testing data 
+# My Answer
+#save the testing data 
 test_data_path = f"{working_path}/test_data.csv"
-# FILL_IN
+dfx = pd.DataFrame(X_test)
+dfx.to_csv(test_data_path,index=False)
 
 prediction_path = f"{working_path}/predictions.csv"
+y=x.reshape(-1,1)
+dfy = pd.DataFrame(x)
+dfy.to_csv(prediction_path,index=False)
 
 # COMMAND ----------
 
@@ -255,7 +331,7 @@ prediction_path = f"{working_path}/predictions.csv"
 
 # COMMAND ----------
 
-# TODO
+# My Answer
 import click
 import mlflow.pyfunc
 import pandas as pd
@@ -265,7 +341,11 @@ import pandas as pd
 @click.option("--test_data_path", default="", type=str)
 @click.option("--prediction_path", default="", type=str)
 def model_predict(final_model_path, test_data_path, prediction_path):
-    # FILL_IN
+    loaded_model = mlflow.pyfunc.load_model(final_model_path.replace("dbfs:", "/dbfs"))
+    preds = loaded_postprocess_model.predict(test_data_path)
+    prediction_path_ = f"{prediction_path}/predictions.csv"
+    dff = pd.DataFrame(preds.reshape(-1,1))
+    dff.to_csv(prediction_path_,index=False)
 
 
 # test model_predict function    
@@ -288,7 +368,7 @@ print(pd.read_csv(demo_prediction_path))
 
 # COMMAND ----------
 
-# TODO
+# My Answer
 dbutils.fs.put(f"{workingDir}/MLproject", 
 '''
 name: Capstone-Project
@@ -298,8 +378,10 @@ conda_env: conda.yaml
 entry_points:
   main:
     parameters:
-      #FILL_IN
-    command:  "python predict.py #FILL_IN"
+      final_model_path: {type: str, default=final_model_path.replace("dbfs:", "/dbfs")}
+      test_data_path: {type: int, default: ""}
+      prediction_path: {type: int, default: "20"}
+    command:  "python predict.py --final_model_path {final_model_path} --test_data_path {test_data_path} --prediction_path {prediction_path}"
 '''.strip(), overwrite=True)
 
 # COMMAND ----------
@@ -346,14 +428,19 @@ print(file_contents)
 
 # COMMAND ----------
 
-# TODO
+# My Answer
 dbutils.fs.put(f"{workingDir}/predict.py", 
 '''
 import click
 import mlflow.pyfunc
 import pandas as pd
 
-# put model_predict function with decorators here
+def model_predict(final_model_path, test_data_path, prediction_path):
+    loaded_model = mlflow.pyfunc.load_model(final_model_path.replace("dbfs:", "/dbfs"))
+    preds = loaded_postprocess_model.predict(test_data_path)
+    prediction_path_ = f"{prediction_path}/predictions.csv"
+    dff = pd.DataFrame(preds.reshape(-1,1))
+    dff.to_csv(prediction_path_,index=False)
     
 if __name__ == "__main__":
   model_predict()
@@ -381,11 +468,15 @@ display( dbutils.fs.ls(workingDir) )
 
 # COMMAND ----------
 
-# TODO
+# My Answer
+#Note i leave the model path as default since it's already set previously to the corresponsing path
 second_prediction_path = f"{working_path}/predictions-2.csv"
 mlflow.projects.run(working_path,
-   # FILL_IN
-)
+   parameters={
+   "final_model_path": "/dbfs/user/mkalassi@ur.rochester.edu/mlflow/99_putting_it_all_together_psp/predict.py"
+    "test_data_path":"/dbfs/user/mkalassi@ur.rochester.edu/mlflow/99_putting_it_all_together_psp/test_data.csv" ,
+    "prediction_path": "/dbfs/user/mkalassi@ur.rochester.edu/mlflow/99_putting_it_all_together_psp/second_prediction_path"
+})
 
 # COMMAND ----------
 

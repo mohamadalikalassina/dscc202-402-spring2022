@@ -63,11 +63,11 @@ name: Lab-03
 conda_env: conda.yaml
 
 entry_points:
-  main:
-    parameters:
-      data_path: {type: str, default: "/dbfs/mnt/training/airbnb/sf-listings/airbnb-cleaned-mlflow.csv"}
-      bootstrap: {type: bool, default: True}
-      min_impurity_decrease: {type: float, default: 0.}
+    main:
+        parameters:
+        data_path: {type: str, default: "/dbfs/mnt/training/airbnb/sf-listings/airbnb-cleaned-mlflow.csv"}
+        bootstrap: {type: bool, default: True}
+        min_impurity_decrease: {type: float, default: 0.}
     command: "python train.py --data_path {data_path} --bootstrap {bootstrap} --min_impurity_decrease {min_impurity_decrease}"
 
 '''.strip())
@@ -118,15 +118,16 @@ print(file_contents)
 # COMMAND ----------
 
 #  My Answer
+
+dbutils.fs.put(path + "train.py", 
+'''
 import mlflow.sklearn
+import mlflow
+import click
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from sklearn.model_selection import train_test_split
-import click
-
-dbutils.fs.put(path + "train.py", 
-'''
 
 @click.command()
 @click.option("--data_path", default="/dbfs/mnt/training/airbnb/sf-listings/airbnb-cleaned-mlflow.csv", type=str)
@@ -159,7 +160,7 @@ def mlflow_rf(data_path, bootstrap, min_impurity_distance):
     mlflow.log_metric("r2", r2_score(y_test, predictions))  
     
 if __name__ == "__main__":
-    mlflow_rf() # Note that this does not need arguments thanks to click
+    mlflow_rf() 
   
 '''.strip(),True)
 
@@ -178,6 +179,10 @@ display(dbutils.fs.ls(path))
 
 # MAGIC %md
 # MAGIC Execute your solution with the following code.
+
+# COMMAND ----------
+
+
 
 # COMMAND ----------
 
